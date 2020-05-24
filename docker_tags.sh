@@ -57,6 +57,7 @@ docker_tags() {
     done
 }
 
-if [ "$#" -gt "0" ]; then
+# Run directly? call function!
+if [ "$(basename "$0")" = "docker_tags.sh" ] && [ "$#" -gt "0" ]; then
     docker_tags "$@"
 fi
