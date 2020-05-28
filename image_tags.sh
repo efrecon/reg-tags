@@ -1,14 +1,20 @@
 #!/usr/bin/env sh
 
-docker_tags() {
+img_tags() {
     _filter=".*"
     _verbose=0
+    _reg=https://registry.hub.docker.com/
     while [ $# -gt 0 ]; do
         case "$1" in
             -f | --filter)
                 _filter=$2; shift 2;;
             --filter=*)
                 _filter="${1#*=}"; shift 1;;
+
+            -r | --registry)
+                _reg=$2; shift 2;;
+            --registry=*)
+                _reg="${1#*=}"; shift 1;;
 
             -v | --verbose)
                 _verbose=1; shift;;
@@ -38,9 +44,9 @@ docker_tags() {
 
     # Library images or user/org images?
     if printf %s\\n "$1" | grep -oq '/'; then
-        hub="https://registry.hub.docker.com/v2/repositories/$1/tags/"
+        hub="${_reg%/}/v2/repositories/$1/tags/"
     else
-        hub="https://registry.hub.docker.com/v2/repositories/library/$1/tags/"
+        hub="${_reg%/}/v2/repositories/library/$1/tags/"
     fi
     [ "$_verbose" = "1" ] && echo "Discovering pagination from $hub" >&2
 
@@ -68,11 +74,64 @@ docker_tags() {
         printf %s\\n "$page" |
             grep -Eo '"name":\s*"[a-zA-Z0-9_.-]+"' |
             sed -E 's/"name":\s*"([a-zA-Z0-9_.-]+)"/\1/' |
-            grep -E "$_filter"
+            grep -E "$_filter" || true
     done
 }
 
-# Run directly? call function!
-if [ "$(basename "$0")" = "docker_tags.sh" ] && [ "$#" -gt "0" ]; then
-    docker_tags "$@"
-fi
+img_newtags() {
+    _flt=".*"
+    _verbose=0
+    _reg=https://registry.hub.docker.com/
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -f | --filter)
+                _flt=$2; shift 2;;
+            --filter=*)
+                _flt="${1#*=}"; shift 1;;
+
+            -r | --registry)
+                _reg=$2; shift 2;;
+            --registry=*)
+                _reg="${1#*=}"; shift 1;;
+
+            -v | --verbose)
+                _verbose=1; shift;;
+
+            --)
+                shift; break;;
+            -*)
+                echo "$1 unknown option!" >&2; return 1;;
+            *)
+                break;
+        esac
+    done
+
+    [ "$#" -lt "2" ] && return 1
+
+    # Disable globbing to make the options reconstruction below safe.
+    _oldstate=$(set +o); set -f
+    _opts="--filter $_flt --registry $_reg"
+    [ "$_verbose" = "1" ] && _opts="$_opts --verbose"
+    _existing=$(mktemp)
+
+    [ "$_verbose" = "1" ] && echo "Collecting relevant tags for $2" >&2
+    # shellcheck disable=SC2086
+    img_tags $_opts -- "$2" > "$_existing"
+    [ "$_verbose" = "1" ] && echo "Diffing aginst relevant tags for $1" >&2
+    # shellcheck disable=SC2086
+    img_tags $_opts -- "$1" | grep -F -x -v -f "$_existing"
+
+    rm -f "$_existing"
+    # Restore globbing state
+    set +vx; eval "$_oldstate"
+}
+
+img_unqualify() {
+    printf %s\\n "$1" | sed -E 's/^([[:alnum:]]+\.)?docker\.(com|io)\///'
+}
+
+
+# From: https://stackoverflow.com/a/37939589
+img_version() {
+    echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'
+}
