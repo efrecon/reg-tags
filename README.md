@@ -11,7 +11,7 @@ Docker [hub] for public images.
 + `img_unqualify` will remove the registry URL from the beginning of an image
   name. It is handy when cleaning names from the `DOCKER_REPO` environment
   variable passed to [hooks].
-+ `img_version` converts a pure semantic versioning to a number that can be
++ `img_version` converts a pure semantic version to a number that can be
   compared with `-gt`, `-lt`, etc.
 
   [hub]: https://hub.docker.com/
