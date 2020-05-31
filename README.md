@@ -52,3 +52,33 @@ The following would only return "real" releases for [alpine]:
 ```
 
   [alpine]: https://hub.docker.com/_/alpine
+
+## Docker Hub
+
+The main use of these functions is when implementing Docker Hub [hooks] when you
+have an image that derives from an official library image and should be rebuilt
+every time the official image has a new version. The hub itself has a similar
+feature, but it is disabled for library images. Using this library and some CI
+logic, you should be able to write code similar to the following in your hooks
+(this takes alpine as an example, passing the version as the build argument
+`version`).
+
+```shell
+#!/usr/bin/env sh
+
+im="alpine"
+
+# shellcheck disable=SC1090
+. "$(dirname "$0")/reg-tags/image_tags.sh"
+
+
+for tag in $(img_newtags --filter '[0-9]+(\.[0-9]+)+$' --verbose -- "$im" "$(img_unqualify "$DOCKER_REPO")"); do
+      echo "============== Building ${DOCKER_REPO}:$tag"
+      docker build --build-arg version="$tag" -t "${DOCKER_REPO}:$tag" .
+done
+```
+
+To implement CI logic to detect changes, [talonneur] can be used.
+
+  [hooks]: https://docs.docker.com/docker-hub/builds/advanced/
+  [talonneur]: https://github.com/YanziNetworks/talonneur
