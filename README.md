@@ -27,7 +27,7 @@ a space separator. The end of options can be marked by a single (and optional)
 + `-f` or `--filter`, a regular expression to restrict tags to versions matching
   the expression.
 + `-r` or `--registry` the root of the Docker registry, defaults to
-  https://registry.hub.docker.com/
+  `https://registry.hub.docker.com/`
 + `-v` or `--verbose` is a tag that turns on verbosity on stderr.
 
 ## Tests
