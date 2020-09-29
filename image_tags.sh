@@ -4,6 +4,7 @@ img_tags() {
     _filter=".*"
     _verbose=0
     _reg=https://registry.hub.docker.com/
+    _pages=
     while [ $# -gt 0 ]; do
         case "$1" in
             -f | --filter)
@@ -15,6 +16,11 @@ img_tags() {
                 _reg=$2; shift 2;;
             --registry=*)
                 _reg="${1#*=}"; shift 1;;
+
+            -p | --pages)
+                _pages=$2; shift 2;;
+            --pages=*)
+                _pages="${1#*=}"; shift 1;;
 
             -v | --verbose)
                 _verbose=1; shift;;
@@ -48,28 +54,30 @@ img_tags() {
     else
         hub="${_reg%/}/v2/repositories/library/$1/tags/"
     fi
-    [ "$_verbose" = "1" ] && echo "Discovering pagination from $hub" >&2
 
     # Get number of pages
-    first=$($download "$hub")
-    count=$(printf %s\\n "$first" | sed -E 's/\{\s*"count":\s*([0-9]+).*/\1/')
-    if [ "$count" = "0" ]; then
-        [ "$_verbose" = "1" ] && echo "No tags, probably non-existing repo" >&2
-        return 0
-    else
-        [ "$_verbose" = "1" ] && echo "$count existing tag(s) for $1" >&2
+    if [ -z "$_pages" ]; then
+        [ "$_verbose" = "1" ] && echo "Discovering pagination from $hub" >&2
+        first=$($download "$hub")
+        count=$(printf %s\\n "$first" | sed -E 's/\{\s*"count":\s*([0-9]+).*/\1/')
+        if [ "$count" = "0" ]; then
+            [ "$_verbose" = "1" ] && echo "No tags, probably non-existing repo" >&2
+            return 0
+        else
+            [ "$_verbose" = "1" ] && echo "$count existing tag(s) for $1" >&2
+        fi
+        pagination=$(   printf %s\\n "$first" |
+                        grep -Eo '"name":\s*"[a-zA-Z0-9_.-]+"' |
+                        wc -l)
+        _pages=$(( count / pagination + 1))
+        [ "$_verbose" = "1" ] && echo "$_pages pages to download for $1" >&2
     fi
-    pagination=$(   printf %s\\n "$first" |
-                    grep -Eo '"name":\s*"[a-zA-Z0-9_.-]+"' |
-                    wc -l)
-    pages=$(( count / pagination + 1))
-    [ "$_verbose" = "1" ] && echo "$pages pages to download for $1" >&2
 
     # Get all tags one page after the other
     i=0
-    while [ "$i" -lt "$pages" ]; do
+    while [ "$i" -lt "$_pages" ]; do
         i=$(( i + 1 ))
-        [ "$_verbose" = "1" ] && echo "Downloading page $i / $pages" >&2
+        [ "$_verbose" = "1" ] && echo "Downloading page $i / $_pages" >&2
         page=$($download "$hub?page=$i")
         printf %s\\n "$page" |
             grep -Eo '"name":\s*"[a-zA-Z0-9_.-]+"' |
@@ -82,6 +90,7 @@ img_newtags() {
     _flt=".*"
     _verbose=0
     _reg=https://registry.hub.docker.com/
+    _pages=
     while [ $# -gt 0 ]; do
         case "$1" in
             -f | --filter)
@@ -93,6 +102,11 @@ img_newtags() {
                 _reg=$2; shift 2;;
             --registry=*)
                 _reg="${1#*=}"; shift 1;;
+
+            -p | --pages)
+                _pages=$2; shift 2;;
+            --pages=*)
+                _pages="${1#*=}"; shift 1;;
 
             -v | --verbose)
                 _verbose=1; shift;;
@@ -110,7 +124,7 @@ img_newtags() {
 
     # Disable globbing to make the options reconstruction below safe.
     _oldstate=$(set +o); set -f
-    _opts="--filter $_flt --registry $_reg"
+    _opts="--filter $_flt --registry $_reg --pages=$_pages"
     [ "$_verbose" = "1" ] && _opts="$_opts --verbose"
     _existing=$(mktemp)
 
