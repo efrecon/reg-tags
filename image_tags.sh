@@ -1,5 +1,19 @@
 #!/usr/bin/env sh
 
+_img_downloader() {
+    if command -v curl >/dev/null; then
+        [ "$_verbose" = "1" ] && echo "Using curl for downloads" >&2
+        # shellcheck disable=SC2037
+        printf %s\\n "curl -sSL"
+    elif command -v wget >/dev/null; then
+        [ "$_verbose" = "1" ] && echo "Using wget for downloads" >&2
+        # shellcheck disable=SC2037
+        printf %s\\n "wget -q -O -"
+    else
+        printf %s\\n ""
+    fi
+}
+
 img_tags() {
     _filter=".*"
     _verbose=0
@@ -35,18 +49,8 @@ img_tags() {
     done
 
     # Decide how to download silently
-    download=
-    if command -v curl >/dev/null; then
-        [ "$_verbose" = "1" ] && echo "Using curl for downloads" >&2
-        # shellcheck disable=SC2037
-        download="curl -sSL"
-    elif command -v wget >/dev/null; then
-        [ "$_verbose" = "1" ] && echo "Using wget for downloads" >&2
-        # shellcheck disable=SC2037
-        download="wget -q -O -"
-    else
-        return 1
-    fi
+    download=$(_img_downloader)
+    if [ -z "$download" ]; then return 1; fi
 
     # Library images or user/org images?
     if printf %s\\n "$1" | grep -oq '/'; then
@@ -84,6 +88,135 @@ img_tags() {
             sed -E 's/"name":\s*"([a-zA-Z0-9_.-]+)"/\1/' |
             grep -E "$_filter" || true
     done
+}
+
+img_labels() {
+    _verbose=0
+    _reg=https://registry-1.docker.io/
+    _auth=https://auth.docker.io/
+    _jq=jq
+    _pfx=
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -r | --registry)
+                _reg=$2; shift 2;;
+            --registry=*)
+                _reg="${1#*=}"; shift 1;;
+
+            -a | --auth)
+                _auth=$2; shift 2;;
+            --auth=*)
+                _auth="${1#*=}"; shift 1;;
+
+            -p | --prefix)
+                _pfx=$2; shift 2;;
+            --prefix=*)
+                _pfx="${1#*=}"; shift 1;;
+
+            --jq)
+                _jq=$2; shift 2;;
+            --jq=*)
+                _jq="${1#*=}"; shift 1;;
+
+            -v | --verbose)
+                _verbose=1; shift;;
+
+            --)
+                shift; break;;
+            -*)
+                echo "$1 unknown option!" >&2; return 1;;
+            *)
+                break;
+        esac
+    done
+
+    # Decide how to download silently
+    download=$(_img_downloader)
+    if [ -z "$download" ]; then return 1; fi
+
+    if [ "$#" = "0" ]; then
+        return 1
+    fi
+
+    # Decide if we can use jq or not
+    if ! command -v "$_jq" >/dev/null; then
+        [ "$_verbose" = "1" ] && echo "jq not found as $_jq, will approximate" >&2
+        _jq=
+    fi
+
+    # Library images or user/org images?
+    if printf %s\\n "$1" | grep -oq '/'; then
+        _img=$1
+    else
+        _img="library/$1"
+    fi
+
+    # Default to tag called latest when none specified
+    if [ "$#" -ge "2" ]; then
+        _tag=$2
+    else
+        [ "$_verbose" = "1" ] && echo "No tag specified, defaulting to latest" >&2
+        _tag=latest
+    fi
+
+    # Authorizing at Docker for that image. We need to do this, even for public
+    # images.
+    [ "$_verbose" = "1" ] && echo "Authorizing for $_img at $_auth" >&2
+    if [ -z "$_jq" ]; then
+        _token=$(   $download "${_auth%%/}/token?scope=repository:$_img:pull&service=registry.docker.io" |
+                    sed -E 's/\{[[:space:]]*"token"[[:space:]]*:[[:space:]]*"([a-zA-Z0-9_.-]+)".*/\1/' )
+    else
+        _token=$(   $download "${_auth%%/}/token?scope=repository:$_img:pull&service=registry.docker.io" |
+                    $_jq -r '.token')
+    fi
+
+    # Get the digest of the image configuration
+    [ "$_verbose" = "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
+    if [ -z "$_jq" ]; then
+        _digest=$(  $download \
+                        --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                        --header "Authorization: Bearer $_token" \
+                        "${_reg%%/}/v2/${_img}/manifests/$_tag" |
+                    grep -E '"digest"' |
+                    head -n 1 |
+                    sed -E 's/[[:space:]]*"digest"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' )
+    else
+        _digest=$(  $download \
+                        --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                        --header "Authorization: Bearer $_token" \
+                        "${_reg%%/}/v2/${_img}/manifests/$_tag" |
+                    $_jq -r '.config.digest' )
+    fi
+
+    # Download the content of the image configuration. This will be in JSON
+    # format. Then isolate the labels present at .container_config.Labels (or is
+    # it .config.Labels?) and reprint them in something that can be evaluated if
+    # necessary, i.e. label=value
+    [ "$_verbose" = "1" ] && echo "Getting configuration for ${_img}:${_tag}" >&2
+    if [ -z "$_jq" ]; then
+        _conf=$($download \
+                    --header "Authorization: Bearer $_token" \
+                    "${_reg%%/}/v2/${_img}/blobs/$_digest")
+        # Check if "Labels" is null or empty, if not isolate everything between
+        # the opening and end curly brace and look for labels there. This will
+        # not work if the label name or content contains curly braces! In the
+        # JSON block after "Labels", we remove the leading and ending curly
+        # brace and replace "," with quotes with line breaks in between.
+        if ! printf %s\\n "$_conf" | grep -qE '"Labels"[[:space:]]*:[[:space:]]*(null|\{\})'; then
+            printf %s\\n "$_conf" |
+            sed -E 's/.*"Labels"[[:space:]]*:[[:space:]]*(\{[^}]+\}).*/\1/' |
+            sed -e 's/^{//' -e 's/}$//' -e 's/","/"\n"/g' |
+            sed -E "s/[[:space:]]*\"([^\"]+)\"[[:space:]]*:[[:space:]]*\"(.*)\"\$/${_pfx}\1=\2/g"
+        fi
+    else
+        $download \
+            --header "Authorization: Bearer $_token" \
+            "${_reg%%/}/v2/${_img}/blobs/$_digest" |
+        $_jq -r '.container_config.Labels' |
+        head -n -1 | tail -n +2 |
+        sed -E 's/(.+),$/\1/g' |
+        sed -E "s/[[:space:]]*\"([^\"]+)\"[[:space:]]*:[[:space:]]*\"(.*)\"\$/${_pfx}\1=\2/g"
+    fi
 }
 
 img_newtags() {
