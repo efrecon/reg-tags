@@ -139,14 +139,6 @@ img_auth() {
         _img="library/$1"
     fi
 
-    # Default to tag called latest when none specified
-    if [ "$#" -ge "2" ]; then
-        _tag=$2
-    else
-        [ "$_verbose" -ge "1" ] && echo "No tag specified, defaulting to latest" >&2
-        _tag=latest
-    fi
-
     # Authorizing at Docker for that image
     [ "$_verbose" -ge "1" ] && echo "Authorizing for $_img at $_auth" >&2
     if [ -z "$_jq" ]; then
@@ -240,9 +232,9 @@ img_labels() {
     # images.
     if [ -z "$_token" ]; then
         if [ "$_verbose" -ge "1" ]; then
-            _token=$(img_auth --jq "$_jq" --auth "$_auth" --verbose -- "$_img" "$_tag")
+            _token=$(img_auth --jq "$_jq" --auth "$_auth" --verbose -- "$_img")
         else
-            _token=$(img_auth --jq "$_jq" --auth "$_auth" --verbose -- "$_img" "$_tag")
+            _token=$(img_auth --jq "$_jq" --auth "$_auth" -- "$_img")
         fi
         [ "$_verbose" -ge "2" ] && echo ">> Auth token: $_token" >&2
     fi
