@@ -169,53 +169,59 @@ img_labels() {
         _token=$(   $download "${_auth%%/}/token?scope=repository:$_img:pull&service=registry.docker.io" |
                     $_jq -r '.token')
     fi
+    [ "$_verbose" = "1" ] && echo ">> Auth token: $_token" >&2
 
-    # Get the digest of the image configuration
-    [ "$_verbose" = "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
-    if [ -z "$_jq" ]; then
-        _digest=$(  $download \
-                        --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-                        --header "Authorization: Bearer $_token" \
-                        "${_reg%%/}/v2/${_img}/manifests/$_tag" |
-                    grep -E '"digest"' |
-                    head -n 1 |
-                    sed -E 's/[[:space:]]*"digest"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' )
-    else
-        _digest=$(  $download \
-                        --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-                        --header "Authorization: Bearer $_token" \
-                        "${_reg%%/}/v2/${_img}/manifests/$_tag" |
-                    $_jq -r '.config.digest' )
-    fi
-
-    # Download the content of the image configuration. This will be in JSON
-    # format. Then isolate the labels present at .container_config.Labels (or is
-    # it .config.Labels?) and reprint them in something that can be evaluated if
-    # necessary, i.e. label=value
-    [ "$_verbose" = "1" ] && echo "Getting configuration for ${_img}:${_tag}" >&2
-    if [ -z "$_jq" ]; then
-        _conf=$($download \
-                    --header "Authorization: Bearer $_token" \
-                    "${_reg%%/}/v2/${_img}/blobs/$_digest")
-        # Check if "Labels" is null or empty, if not isolate everything between
-        # the opening and end curly brace and look for labels there. This will
-        # not work if the label name or content contains curly braces! In the
-        # JSON block after "Labels", we remove the leading and ending curly
-        # brace and replace "," with quotes with line breaks in between.
-        if ! printf %s\\n "$_conf" | grep -qE '"Labels"[[:space:]]*:[[:space:]]*(null|\{\})'; then
-            printf %s\\n "$_conf" |
-            sed -E 's/.*"Labels"[[:space:]]*:[[:space:]]*(\{[^}]+\}).*/\1/' |
-            sed -e 's/^{//' -e 's/}$//' -e 's/","/"\n"/g' |
-            sed -E "s/[[:space:]]*\"([^\"]+)\"[[:space:]]*:[[:space:]]*\"(.*)\"\$/${_pfx}\1=\2/g"
+    if [ -n "$_token" ] && [ "$_token" != "null" ]; then
+        # Get the digest of the image configuration
+        [ "$_verbose" = "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
+        if [ -z "$_jq" ]; then
+            _digest=$(  $download \
+                            --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                            --header "Authorization: Bearer $_token" \
+                            "${_reg%%/}/v2/${_img}/manifests/$_tag" |
+                        grep -E '"digest"' |
+                        head -n 1 |
+                        sed -E 's/[[:space:]]*"digest"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' )
+        else
+            _digest=$(  $download \
+                            --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                            --header "Authorization: Bearer $_token" \
+                            "${_reg%%/}/v2/${_img}/manifests/$_tag" |
+                        $_jq -r '.config.digest' )
         fi
-    else
-        $download \
-            --header "Authorization: Bearer $_token" \
-            "${_reg%%/}/v2/${_img}/blobs/$_digest" |
-        $_jq -r '.container_config.Labels' |
-        head -n -1 | tail -n +2 |
-        sed -E 's/(.+),$/\1/g' |
-        sed -E "s/[[:space:]]*\"([^\"]+)\"[[:space:]]*:[[:space:]]*\"(.*)\"\$/${_pfx}\1=\2/g"
+        [ "$_verbose" = "1" ] && echo ">> Digest: $_digest" >&2
+
+        if [ -n "$_digest" ] && [ "$_digest" != "null" ]; then
+            # Download the content of the image configuration. This will be in JSON
+            # format. Then isolate the labels present at .container_config.Labels (or is
+            # it .config.Labels?) and reprint them in something that can be evaluated if
+            # necessary, i.e. label=value
+            [ "$_verbose" = "1" ] && echo "Getting configuration for ${_img}:${_tag}" >&2
+            if [ -z "$_jq" ]; then
+                _conf=$($download \
+                            --header "Authorization: Bearer $_token" \
+                            "${_reg%%/}/v2/${_img}/blobs/$_digest")
+                # Check if "Labels" is null or empty, if not isolate everything between
+                # the opening and end curly brace and look for labels there. This will
+                # not work if the label name or content contains curly braces! In the
+                # JSON block after "Labels", we remove the leading and ending curly
+                # brace and replace "," with quotes with line breaks in between.
+                if ! printf %s\\n "$_conf" | grep -qE '"Labels"[[:space:]]*:[[:space:]]*(null|\{\})'; then
+                    printf %s\\n "$_conf" |
+                    sed -E 's/.*"Labels"[[:space:]]*:[[:space:]]*(\{[^}]+\}).*/\1/' |
+                    sed -e 's/^{//' -e 's/}$//' -e 's/","/"\n"/g' |
+                    sed -E "s/[[:space:]]*\"([^\"]+)\"[[:space:]]*:[[:space:]]*\"(.*)\"\$/${_pfx}\1=\2/g"
+                fi
+            else
+                $download \
+                    --header "Authorization: Bearer $_token" \
+                    "${_reg%%/}/v2/${_img}/blobs/$_digest" |
+                $_jq -r '.container_config.Labels' |
+                head -n -1 | tail -n +2 |
+                sed -E 's/(.+),$/\1/g' |
+                sed -E "s/[[:space:]]*\"([^\"]+)\"[[:space:]]*:[[:space:]]*\"(.*)\"\$/${_pfx}\1=\2/g"
+            fi
+        fi
     fi
 }
 
