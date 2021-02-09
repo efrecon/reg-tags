@@ -90,28 +90,16 @@ img_tags() {
     done
 }
 
-img_labels() {
+img_auth() {
     _verbose=0
-    _reg=https://registry-1.docker.io/
     _auth=https://auth.docker.io/
     _jq=jq
-    _pfx=
     while [ $# -gt 0 ]; do
         case "$1" in
-            -r | --registry)
-                _reg=$2; shift 2;;
-            --registry=*)
-                _reg="${1#*=}"; shift 1;;
-
             -a | --auth)
                 _auth=$2; shift 2;;
             --auth=*)
                 _auth="${1#*=}"; shift 1;;
-
-            -p | --prefix)
-                _pfx=$2; shift 2;;
-            --prefix=*)
-                _pfx="${1#*=}"; shift 1;;
 
             --jq)
                 _jq=$2; shift 2;;
@@ -140,7 +128,7 @@ img_labels() {
 
     # Decide if we can use jq or not
     if ! command -v "$_jq" >/dev/null; then
-        [ "$_verbose" = "1" ] && echo "jq not found as $_jq, will approximate" >&2
+        [ "$_verbose" -ge "1" ] && echo "jq not found as $_jq, will approximate" >&2
         _jq=
     fi
 
@@ -155,25 +143,113 @@ img_labels() {
     if [ "$#" -ge "2" ]; then
         _tag=$2
     else
-        [ "$_verbose" = "1" ] && echo "No tag specified, defaulting to latest" >&2
+        [ "$_verbose" -ge "1" ] && echo "No tag specified, defaulting to latest" >&2
+        _tag=latest
+    fi
+
+    # Authorizing at Docker for that image
+    [ "$_verbose" -ge "1" ] && echo "Authorizing for $_img at $_auth" >&2
+    if [ -z "$_jq" ]; then
+        $download "${_auth%%/}/token?scope=repository:$_img:pull&service=registry.docker.io" |
+            sed -E 's/\{[[:space:]]*"token"[[:space:]]*:[[:space:]]*"([a-zA-Z0-9_.-]+)".*/\1/'
+    else
+        $download "${_auth%%/}/token?scope=repository:$_img:pull&service=registry.docker.io" |
+            $_jq -r '.token'
+    fi
+}
+
+img_labels() {
+    _verbose=0
+    _reg=https://registry-1.docker.io/
+    _auth=https://auth.docker.io/
+    _jq=jq
+    _pfx=
+    _token=
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -r | --registry)
+                _reg=$2; shift 2;;
+            --registry=*)
+                _reg="${1#*=}"; shift 1;;
+
+            -a | --auth)
+                _auth=$2; shift 2;;
+            --auth=*)
+                _auth="${1#*=}"; shift 1;;
+
+            -p | --prefix)
+                _pfx=$2; shift 2;;
+            --prefix=*)
+                _pfx="${1#*=}"; shift 1;;
+
+            --jq)
+                _jq=$2; shift 2;;
+            --jq=*)
+                _jq="${1#*=}"; shift 1;;
+
+            -t | --token)
+                _token=$2; shift 2;;
+            --token=*)
+                _token="${1#*=}"; shift 1;;
+
+            -v | --verbose)
+                _verbose=1; shift;;
+
+            --trace)
+                _verbose=2; shift;;
+
+            --)
+                shift; break;;
+            -*)
+                echo "$1 unknown option!" >&2; return 1;;
+            *)
+                break;
+        esac
+    done
+
+    # Decide how to download silently
+    download=$(_img_downloader)
+    if [ -z "$download" ]; then return 1; fi
+
+    if [ "$#" = "0" ]; then
+        return 1
+    fi
+
+    # Decide if we can use jq or not
+    if ! command -v "$_jq" >/dev/null; then
+        [ "$_verbose" -ge "1" ] && echo "jq not found as $_jq, will approximate" >&2
+        _jq=
+    fi
+
+    # Library images or user/org images?
+    if printf %s\\n "$1" | grep -oq '/'; then
+        _img=$1
+    else
+        _img="library/$1"
+    fi
+
+    # Default to tag called latest when none specified
+    if [ "$#" -ge "2" ]; then
+        _tag=$2
+    else
+        [ "$_verbose" -ge "1" ] && echo "No tag specified, defaulting to latest" >&2
         _tag=latest
     fi
 
     # Authorizing at Docker for that image. We need to do this, even for public
     # images.
-    [ "$_verbose" = "1" ] && echo "Authorizing for $_img at $_auth" >&2
-    if [ -z "$_jq" ]; then
-        _token=$(   $download "${_auth%%/}/token?scope=repository:$_img:pull&service=registry.docker.io" |
-                    sed -E 's/\{[[:space:]]*"token"[[:space:]]*:[[:space:]]*"([a-zA-Z0-9_.-]+)".*/\1/' )
-    else
-        _token=$(   $download "${_auth%%/}/token?scope=repository:$_img:pull&service=registry.docker.io" |
-                    $_jq -r '.token')
+    if [ -z "$_token" ]; then
+        if [ "$_verbose" -ge "1" ]; then
+            _token=$(img_auth --jq "$_jq" --auth "$_auth" --verbose -- "$_img" "$_tag")
+        else
+            _token=$(img_auth --jq "$_jq" --auth "$_auth" --verbose -- "$_img" "$_tag")
+        fi
+        [ "$_verbose" -ge "2" ] && echo ">> Auth token: $_token" >&2
     fi
-    [ "$_verbose" = "1" ] && echo ">> Auth token: $_token" >&2
 
     if [ -n "$_token" ] && [ "$_token" != "null" ]; then
         # Get the digest of the image configuration
-        [ "$_verbose" = "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
+        [ "$_verbose" -ge "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
         if [ -z "$_jq" ]; then
             _digest=$(  $download \
                             --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
@@ -189,14 +265,14 @@ img_labels() {
                             "${_reg%%/}/v2/${_img}/manifests/$_tag" |
                         $_jq -r '.config.digest' )
         fi
-        [ "$_verbose" = "1" ] && echo ">> Digest: $_digest" >&2
+        [ "$_verbose" -ge "2" ] && echo ">> Digest: $_digest" >&2
 
         if [ -n "$_digest" ] && [ "$_digest" != "null" ]; then
             # Download the content of the image configuration. This will be in JSON
             # format. Then isolate the labels present at .container_config.Labels (or is
             # it .config.Labels?) and reprint them in something that can be evaluated if
             # necessary, i.e. label=value
-            [ "$_verbose" = "1" ] && echo "Getting configuration for ${_img}:${_tag}" >&2
+            [ "$_verbose" -ge "1" ] && echo "Getting configuration for ${_img}:${_tag}" >&2
             if [ -z "$_jq" ]; then
                 _conf=$($download \
                             --header "Authorization: Bearer $_token" \
