@@ -85,6 +85,8 @@ org.opencontainers.image.version=
 
 ## Docker Hub
 
+### Detecting New Tags
+
 The main use of these functions is when implementing Docker Hub [hooks] when you
 have an image that derives from an official library image and should be rebuilt
 every time the official image has a new version. The hub itself has a similar
@@ -113,12 +115,14 @@ To implement CI logic to detect changes, [talonneur] can be used.
   [hooks]: https://docs.docker.com/docker-hub/builds/advanced/
   [talonneur]: https://github.com/YanziNetworks/talonneur
 
-This example above will rebuild when a new tag for it appears. If you wanted to
-re-generate all your derived images whenever your own modifications change, you
-could make use of the `org.opencontainers.image.revision` OCI annotation and set
-it to the git checksum that is passed to the Docker Hub hook as the variable
-`SOURCE_COMMIT`. The following code builds upon the previous snippet as an
-example of this technique:
+### Rebuild on Local Changes
+
+The example above will rebuild when a new tag for an image appears. If you
+wanted to re-generate all your derived images whenever your own modifications
+change, you could make use of the `org.opencontainers.image.revision` OCI
+annotation and set it to the git checksum that is passed to the Docker Hub hook
+as the variable `SOURCE_COMMIT`. The following code builds upon the previous
+snippet as an example of this technique:
 
 ```shell
 #!/usr/bin/env sh
