@@ -13,6 +13,10 @@ Docker [hub] for public images.
   variable passed to [hooks].
 + `img_version` converts a pure semantic version to a number that can be
   compared with `-gt`, `-lt`, etc.
++ `img_labels` will print out all the labels for a given image at a given tag
+  (default: latest).
++ `img_auth` will authorise at Docker, this can be handy when calling
+  `img_labels` several times on the same image (but different tags).
 
   [hub]: https://hub.docker.com/
   [hooks]: https://docs.docker.com/docker-hub/builds/advanced/
@@ -37,7 +41,9 @@ of the functions to exercise their behaviour in the [bin] directory.
 
   [bin]: ./bin/
 
-## Example
+## Examples
+
+### Tags
 
 The following will return all tags for the official [alpine] image:
 
@@ -52,6 +58,30 @@ The following would only return "real" releases for [alpine]:
 ```
 
   [alpine]: https://hub.docker.com/_/alpine
+
+### Labels
+
+The following command would print out all the labels for the
+`yanzinetworks/alpine` image:
+
+```shell
+./bin/img_labels.sh yanzinetworks/alpine
+```
+
+All labels are output in the `env` format, e.g.:
+
+```shell
+org.opencontainers.image.authors=Emmanuel Frecon <efrecon+github@gmail.com>
+org.opencontainers.image.created=
+org.opencontainers.image.description=glibc-capable Alpine
+org.opencontainers.image.documentation=https://github.com/YanziNetworks/alpine/README.md
+org.opencontainers.image.licenses=MIT
+org.opencontainers.image.source=https://github.com/YanziNetworks/alpine
+org.opencontainers.image.title=alpine
+org.opencontainers.image.url=https://github.com/YanziNetworks/alpine
+org.opencontainers.image.vendor=Yanzi Networks AB
+org.opencontainers.image.version=
+```
 
 ## Docker Hub
 
@@ -82,3 +112,44 @@ To implement CI logic to detect changes, [talonneur] can be used.
 
   [hooks]: https://docs.docker.com/docker-hub/builds/advanced/
   [talonneur]: https://github.com/YanziNetworks/talonneur
+
+This example above will rebuild when a new tag for it appears. If you wanted to
+re-generate all your derived images whenever your own modifications change, you
+could make use of the `org.opencontainers.image.revision` OCI annotation and set
+it to the git checksum that is passed to the Docker Hub hook as the variable
+`SOURCE_COMMIT`. The following code builds upon the previous snippet as an
+example of this technique:
+
+```shell
+#!/usr/bin/env sh
+
+im="alpine"
+
+# shellcheck disable=SC1090
+. "$(dirname "$0")/reg-tags/image_tags.sh"
+
+# Login at the Docker hub to be able to access info about the image.
+token=$(img_auth "$DOCKER_REPO")
+
+for tag in $(img_tags --filter '[0-9]+(\.[0-9]+)+$' --verbose -- "$im"); do
+    # Get the revision out of the org.opencontainers.image.revision label, this
+    # will be the label where we store information about this repo (it cannot be
+    # the tag, since we tag as the base image).
+    revision=$(img_labels --verbose --token "$token" -- "$DOCKER_REPO" "$tag" |
+                grep "^org.opencontainers.image.revision" |
+                sed -E 's/^org.opencontainers.image.revision=(.+)/\1/')
+    # If the revision is different from the source commit (including empty,
+    # which will happen when our version of the image does not already exist),
+    # build the image, making sure we label with the git commit sha at the
+    # org.opencontainers.image.revision OCI label, but using the same tag as the
+    # library image.
+    if [ "$revision" != "$SOURCE_COMMIT" ]; then
+        echo "============== No ${DOCKER_REPO}:$tag at $SOURCE_COMMIT"
+        docker build \
+            --build-arg version="$tag" \
+            --tag "${DOCKER_REPO}:$tag" \
+            --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
+            .
+    fi
+done
+```
