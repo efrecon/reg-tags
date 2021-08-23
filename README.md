@@ -15,7 +15,7 @@ Docker [hub] for public images.
   compared with `-gt`, `-lt`, etc.
 + `img_labels` will print out all the labels for a given image at a given tag
   (default: latest).
-+ `img_auth` will authorise at Docker, this can be handy when calling
++ `img_auth` will authorise at a registry, this can be handy when calling
   `img_labels` several times on the same image (but different tags).
 
   [hub]: https://hub.docker.com/
