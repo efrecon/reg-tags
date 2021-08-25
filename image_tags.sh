@@ -53,11 +53,16 @@ _img_image() {
     fi
 }
 
+# Try using the API as in img_labels and as in the ruby implementation
+# https://github.com/Jack12816/plankton/blob/58bd9deee339c645d36454a3819d95fcfe34e55d/lib/plankton/monkey_patches.rb#L119
+# instead.
 img_tags() {
     _filter=".*"
     _verbose=0
-    _reg=https://registry.hub.docker.com/
-    _pages=
+    _reg=
+    _auth=     ; # Guess where to authorise by default
+    _token=    ; # Authorisation token, when empty (default) go get it first
+    _jq=jq     ; # Default is to look for jq under the PATH
     while [ $# -gt 0 ]; do
         case "$1" in
             -f | --filter)
@@ -70,13 +75,26 @@ img_tags() {
             --registry=*)
                 _reg="${1#*=}"; shift 1;;
 
-            -p | --pages)
-                _pages=$2; shift 2;;
-            --pages=*)
-                _pages="${1#*=}"; shift 1;;
+            -a | --auth)
+                _auth=$2; shift 2;;
+            --auth=*)
+                _auth="${1#*=}"; shift 1;;
+
+            -t | --token)
+                _token=$2; shift 2;;
+            --token=*)
+                _token="${1#*=}"; shift 1;;
+
+            --jq)
+                _jq=$2; shift 2;;
+            --jq=*)
+                _jq="${1#*=}"; shift 1;;
 
             -v | --verbose)
                 _verbose=1; shift;;
+
+            --trace)
+                _verbose=2; shift;;
 
             --)
                 shift; break;;
@@ -91,42 +109,56 @@ img_tags() {
     download=$(_img_downloader)
     if [ -z "$download" ]; then return 1; fi
 
+    if [ "$#" = "0" ]; then
+        return 1
+    fi
+
+    # Decide if we can use jq or not
+    if ! command -v "$_jq" >/dev/null; then
+        [ "$_verbose" -ge "1" ] && echo "jq not found as $_jq, will approximate" >&2
+        _jq=
+    fi
+
     # Library images or user/org images?
-    if printf %s\\n "$1" | grep -oq '/'; then
-        hub="${_reg%/}/v2/repositories/$1/tags/"
-    else
-        hub="${_reg%/}/v2/repositories/library/$1/tags/"
+    _img=$(_img_image "$1")
+    [ -z "$_reg" ] && _reg=https://$(_img_registry "$1")
+    if [ "${_reg%%/}" = "https://registry.docker.io" ]; then
+        _reg=https://registry-1.docker.io
     fi
 
-    # Get number of pages
-    if [ -z "$_pages" ]; then
-        [ "$_verbose" = "1" ] && echo "Discovering pagination from $hub" >&2
-        first=$($download "$hub")
-        count=$(printf %s\\n "$first" | sed -E 's/\{\s*"count":\s*([0-9]+).*/\1/')
-        if [ "$count" = "0" ]; then
-            [ "$_verbose" = "1" ] && echo "No tags, probably non-existing repo" >&2
-            return 0
+    # Authorizing at Docker for that image. We need to do this, even for public
+    # images.
+    if [ -z "$_token" ]; then
+        if [ "$_verbose" -ge "1" ]; then
+            _token=$(img_auth --jq="$_jq" --auth="$_auth" --verbose -- "$1")
         else
-            [ "$_verbose" = "1" ] && echo "$count existing tag(s) for $1" >&2
+            _token=$(img_auth --jq="$_jq" --auth="$_auth" -- "$1")
         fi
-        pagination=$(   printf %s\\n "$first" |
-                        grep -Eo '"name":\s*"[a-zA-Z0-9_.-]+"' |
-                        wc -l)
-        _pages=$(( count / pagination + 1))
-        [ "$_verbose" = "1" ] && echo "$_pages pages to download for $1" >&2
+        [ "$_verbose" -ge "2" ] && echo ">> Auth token: $_token" >&2
     fi
 
-    # Get all tags one page after the other
-    i=0
-    while [ "$i" -lt "$_pages" ]; do
-        i=$(( i + 1 ))
-        [ "$_verbose" = "1" ] && echo "Downloading page $i / $_pages" >&2
-        page=$($download "$hub?page=$i")
-        printf %s\\n "$page" |
-            grep -Eo '"name":\s*"[a-zA-Z0-9_.-]+"' |
-            sed -E 's/"name":\s*"([a-zA-Z0-9_.-]+)"/\1/' |
-            grep -E "$_filter" || true
-    done
+    if [ -n "$_token" ] && [ "$_token" != "null" ]; then
+        # Get the digest of the image configuration
+        [ "$_verbose" -ge "1" ] && echo "Getting tags for ${_img}" >&2
+        if [ -z "$_jq" ]; then
+            $download \
+                    --header "Authorization: Bearer $_token" \
+                    "${_reg%%/}/v2/${_img}/tags/list?n=40" |
+                grep -E '.*"tags"[[:space:]]*:[[:space:]]*\[([^]]+)\]' |
+                sed -E 's/.*"tags"[[:space:]]*:[[:space:]]*\[([^]]+)\].*/\1/' |
+                sed -E 's/"[[:space:]]*,[[:space:]]*/\n/g' |
+                sed -E -e 's/^"//g' -e 's/"$//' |
+                grep -E "$_filter"
+        else
+            $download \
+                    --header "Authorization: Bearer $_token" \
+                    "${_reg%%/}/v2/${_img}/tags/list" |
+                jq -r .tags |
+                head -n -1 | tail -n +2 |
+                sed -E -e 's/^[[:space:]]*"//g' -e 's/",?$//' |
+                grep -E "$_filter"
+        fi
+    fi
 }
 
 img_auth() {
@@ -181,7 +213,8 @@ img_auth() {
     [ "$_verbose" -ge "1" ] && echo "Authorizing for $_img at $_auth" >&2
     if [ -z "$_jq" ]; then
         $download "${_auth%%/}/token?scope=repository:$_img:pull&service=$(_img_registry "$1")" |
-            sed -E 's/\{[[:space:]]*"token"[[:space:]]*:[[:space:]]*"([a-zA-Z0-9_.-]+)".*/\1/'
+            grep -E '^\{?[[:space:]]*"token"' |
+            sed -E 's/\{?[[:space:]]*"token"[[:space:]]*:[[:space:]]*"([a-zA-Z0-9_.-]+)".*/\1/'
     else
         $download "${_auth%%/}/token?scope=repository:$_img:pull&service=$(_img_registry "$1")" |
             $_jq -r '.token'
@@ -281,10 +314,6 @@ img_labels() {
         # Get the digest of the image configuration
         [ "$_verbose" -ge "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
         if [ -z "$_jq" ]; then
-        $download \
-                            --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-                            --header "Authorization: Bearer $_token" \
-                            "${_reg%%/}/v2/${_img}/manifests/$_tag"
             _digest=$(  $download \
                             --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
                             --header "Authorization: Bearer $_token" \
@@ -335,59 +364,6 @@ img_labels() {
     fi
 }
 
-img_newtags() {
-    _flt=".*"
-    _verbose=0
-    _reg=https://registry.hub.docker.com/
-    _pages=
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            -f | --filter)
-                _flt=$2; shift 2;;
-            --filter=*)
-                _flt="${1#*=}"; shift 1;;
-
-            -r | --registry)
-                _reg=$2; shift 2;;
-            --registry=*)
-                _reg="${1#*=}"; shift 1;;
-
-            -p | --pages)
-                _pages=$2; shift 2;;
-            --pages=*)
-                _pages="${1#*=}"; shift 1;;
-
-            -v | --verbose)
-                _verbose=1; shift;;
-
-            --)
-                shift; break;;
-            -*)
-                echo "$1 unknown option!" >&2; return 1;;
-            *)
-                break;
-        esac
-    done
-
-    [ "$#" -lt "2" ] && return 1
-
-    # Disable globbing to make the options reconstruction below safe.
-    _oldstate=$(set +o); set -f
-    _opts="--filter $_flt --registry $_reg --pages=$_pages"
-    [ "$_verbose" = "1" ] && _opts="$_opts --verbose"
-    _existing=$(mktemp)
-
-    [ "$_verbose" = "1" ] && echo "Collecting relevant tags for $2" >&2
-    # shellcheck disable=SC2086
-    img_tags $_opts -- "$2" > "$_existing"
-    [ "$_verbose" = "1" ] && echo "Diffing aginst relevant tags for $1" >&2
-    # shellcheck disable=SC2086
-    img_tags $_opts -- "$1" | grep -F -x -v -f "$_existing"
-
-    rm -f "$_existing"
-    # Restore globbing state
-    set +vx; eval "$_oldstate"
-}
 
 img_unqualify() {
     printf %s\\n "$1" | sed -E 's/^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}\///'
