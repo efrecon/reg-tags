@@ -1,7 +1,11 @@
 # Image Tags
 
-This library implements a few functions to operate on the existing tags at the
-Docker [hub] for public images.
+This library implements a few functions to operate on the existing tags at a
+Docker registry. The [project] also publishes a Docker [image] providing the
+same functionality. They are able to authenticate at the Docker [hub] for public
+images, but also at other registries. These functions prefer fully-qualified
+image names such as `ghcr.io/efrecon/jq`, but will automatically default to the
+[hub] for other image names, such as `alpine` (an alias for `library/alpine`).
 
 + `img_tags` will print out the tags for the image which name is passed as an
   argument.
@@ -15,9 +19,12 @@ Docker [hub] for public images.
   compared with `-gt`, `-lt`, etc.
 + `img_labels` will print out all the labels for a given image at a given tag
   (default: latest).
-+ `img_auth` will authorise at Docker, this can be handy when calling
-  `img_labels` several times on the same image (but different tags).
++ `img_auth` will authorise at a registry, this can be handy when calling
+  `img_labels` several times on the same image (but different tags), or
+  `img_tags`.
 
+  [project]: https://github.com/efrecon/reg-tags
+  [image]: https://hub.docker.com/r/efrecon/reg-tags
   [hub]: https://hub.docker.com/
   [hooks]: https://docs.docker.com/docker-hub/builds/advanced/
 
@@ -30,8 +37,12 @@ a space separator. The end of options can be marked by a single (and optional)
 
 + `-f` or `--filter`, a regular expression to restrict tags to versions matching
   the expression.
-+ `-r` or `--registry` the root of the Docker registry, defaults to
-  `https://registry.hub.docker.com/`
++ `-r` or `--registry` the URL to the Docker registry, defaults to the registry
+  guessed from the name of the image.
++ `-a` or `--auth` is the URL for the authorisation server. For the Docker Hub,
+  this should be `https://auth.docker.io`, otherwise the same as `--registry`.
++ `-t` or `--token` is the authorisation token, acquired by `img_auth`. When
+  this is provided, no extra authorisation will be attempted.
 + `-v` or `--verbose` is a tag that turns on verbosity on stderr.
 
 ## Tests
@@ -45,7 +56,8 @@ of the functions to exercise their behaviour in the [bin] directory.
 
 ### Tags
 
-The following will return all tags for the official [alpine] image:
+The following will return all tags for the official [alpine] image. As no
+registry is specified, `alpine` will be looked for at the Docker hub.
 
 ```shell
 ./bin/img_tags.sh alpine
@@ -58,6 +70,14 @@ The following would only return "real" releases for [alpine]:
 ```
 
   [alpine]: https://hub.docker.com/_/alpine
+
+Finally, the following would return the tags for the `efrecon/jq` image at the
+GHCR. It will guess the authorisation and registry servers from the
+fully-qualified name of the image.
+
+```shell
+./bin/img_tags ghcr.io/efrecon/jq
+```
 
 ### Labels
 
@@ -83,7 +103,18 @@ org.opencontainers.image.vendor=Yanzi Networks AB
 org.opencontainers.image.version=
 ```
 
-## Docker Hub
+## Running as a Docker Container
+
+When running as a Docker container, the quickest is to add the short name of the
+function to call as a first argument to the container, e.g. `tags` for the
+`img_tags` function. For example, the following would list the tags of the
+[alpine] image:
+
+```shell
+docker run -it --rm efrecon/reg-tags tags alpine
+```
+
+## Docker Hub Integration
 
 ### Detecting New Tags
 

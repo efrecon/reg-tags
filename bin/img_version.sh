@@ -1,1 +1,1 @@
-img_tags.sh
+image_tags.sh
