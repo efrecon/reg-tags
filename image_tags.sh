@@ -1,5 +1,8 @@
 #!/usr/bin/env sh
 
+# NOTE: This implementation makes use of the local keyword. While this is not a
+# pure POSIX shell construction, it is available in almost all implementations.
+
 _img_downloader() {
     if command -v curl >/dev/null; then
         [ "$_verbose" = "1" ] && echo "Using curl for downloads" >&2
@@ -15,7 +18,9 @@ _img_downloader() {
 }
 
 _img_authorizer() {
-    _qualifier=$(printf %s\\n "$1" | cut -d / -f 1)
+    # shellcheck disable=SC3043
+    local _qualifier
+    _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
     if printf %s\\n "$_qualifier" | grep -qE '^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}$'; then
         case "$_qualifier" in
             docker.*)
@@ -29,7 +34,9 @@ _img_authorizer() {
 }
 
 _img_registry() {
-    _qualifier=$(printf %s\\n "$1" | cut -d / -f 1)
+    # shellcheck disable=SC3043
+    local _qualifier
+    _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
     if printf %s\\n "$_qualifier" | grep -qE '^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}$'; then
         case "$_qualifier" in
             docker.*)
@@ -43,7 +50,9 @@ _img_registry() {
 }
 
 _img_image() {
-    _qualifier=$(printf %s\\n "$1" | cut -d / -f 1)
+    # shellcheck disable=SC3043
+    local _qualifier
+    _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
     if printf %s\\n "$_qualifier" | grep -qE '^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}$'; then
         printf %s\\n "$1" | cut -d / -f 2-
     elif printf %s\\n "$1" | grep -q '/'; then
@@ -57,12 +66,18 @@ _img_image() {
 # https://github.com/Jack12816/plankton/blob/58bd9deee339c645d36454a3819d95fcfe34e55d/lib/plankton/monkey_patches.rb#L119
 # instead.
 img_tags() {
-    _filter=".*"
-    _verbose=0
-    _reg=
-    _auth=     ; # Guess where to authorise by default
-    _token=    ; # Authorisation token, when empty (default) go get it first
-    _jq=jq     ; # Default is to look for jq under the PATH
+    # shellcheck disable=SC3043
+    local _filter=".*"
+    # shellcheck disable=SC3043
+    local _verbose=0 ; # Be silent by default
+    # shellcheck disable=SC3043
+    local _reg=      ; # Guess the registry by default
+    # shellcheck disable=SC3043
+    local _auth=     ; # Guess where to authorise by default
+    # shellcheck disable=SC3043
+    local _token=    ; # Authorisation token, when empty (default) go get it first
+    # shellcheck disable=SC3043
+    local _jq=jq     ; # Default is to look for jq under the PATH
     while [ $# -gt 0 ]; do
         case "$1" in
             -f | --filter)
@@ -92,6 +107,8 @@ img_tags() {
 
             -v | --verbose)
                 _verbose=1; shift;;
+            --verbose=*)
+                _verbose="${1#*=}"; shift 1;;
 
             --trace)
                 _verbose=2; shift;;
@@ -106,7 +123,9 @@ img_tags() {
     done
 
     # Decide how to download silently
-    download=$(_img_downloader)
+    # shellcheck disable=SC3043
+    local download
+    download="$(_img_downloader)"
     if [ -z "$download" ]; then return 1; fi
 
     if [ "$#" = "0" ]; then
@@ -120,7 +139,9 @@ img_tags() {
     fi
 
     # Library images or user/org images?
-    _img=$(_img_image "$1")
+    # shellcheck disable=SC3043
+    local _img
+    _img="$(_img_image "$1")"
     [ -z "$_reg" ] && _reg=https://$(_img_registry "$1")
     if [ "${_reg%%/}" = "https://registry.docker.io" ]; then
         _reg=https://registry-1.docker.io
@@ -162,9 +183,12 @@ img_tags() {
 }
 
 img_auth() {
-    _verbose=0 ; # Be silent by default
-    _auth=     ; # Default is to guess where to authorise
-    _jq=jq     ; # Default is to look for jq under the PATH
+    # shellcheck disable=SC3043
+    local _verbose=0 ; # Be silent by default
+    # shellcheck disable=SC3043
+    local _auth=     ; # Default is to guess where to authorise
+    # shellcheck disable=SC3043
+    local _jq=jq     ; # Default is to look for jq under the PATH
     while [ $# -gt 0 ]; do
         case "$1" in
             -a | --auth)
@@ -179,6 +203,8 @@ img_auth() {
 
             -v | --verbose)
                 _verbose=1; shift;;
+            --verbose=*)
+                _verbose="${1#*=}"; shift 1;;
 
             --)
                 shift; break;;
@@ -190,7 +216,9 @@ img_auth() {
     done
 
     # Decide how to download silently
-    download=$(_img_downloader)
+    # shellcheck disable=SC3043
+    local download
+    download="$(_img_downloader)"
     if [ -z "$download" ]; then return 1; fi
 
     if [ "$#" = "0" ]; then
@@ -204,7 +232,9 @@ img_auth() {
     fi
 
     # Library images or user/org images?
-    _img=$(_img_image "$1")
+    # shellcheck disable=SC3043
+    local _img
+    _img="$(_img_image "$1")"
 
     # Default authorizer
     [ -z "$_auth" ] && _auth=https://$(_img_authorizer "$1")/
@@ -222,12 +252,18 @@ img_auth() {
 }
 
 img_labels() {
-    _verbose=0 ; # Be silent by default
-    _reg=      ; # Guess the registry by default
-    _auth=     ; # Guess where to authorise by default
-    _jq=jq     ; # Default is to use jq from the PATH when it exists
-    _pfx=      ; # Prefix to add in front of each label name
-    _token=    ; # Authorisation token, when empty (default) go get it first
+    # shellcheck disable=SC3043
+    local _verbose=0 ; # Be silent by default
+    # shellcheck disable=SC3043
+    local _reg=      ; # Guess the registry by default
+    # shellcheck disable=SC3043
+    local _auth=     ; # Guess where to authorise by default
+    # shellcheck disable=SC3043
+    local _jq=jq     ; # Default is to use jq from the PATH when it exists
+    # shellcheck disable=SC3043
+    local _pfx=      ; # Prefix to add in front of each label name
+    # shellcheck disable=SC3043
+    local _token=    ; # Authorisation token, when empty (default) go get it first
     while [ $# -gt 0 ]; do
         case "$1" in
             -r | --registry)
@@ -257,6 +293,8 @@ img_labels() {
 
             -v | --verbose)
                 _verbose=1; shift;;
+            --verbose=*)
+                _verbose="${1#*=}"; shift 1;;
 
             --trace)
                 _verbose=2; shift;;
@@ -271,7 +309,9 @@ img_labels() {
     done
 
     # Decide how to download silently
-    download=$(_img_downloader)
+    # shellcheck disable=SC3043
+    local download
+    download="$(_img_downloader)"
     if [ -z "$download" ]; then return 1; fi
 
     if [ "$#" = "0" ]; then
@@ -285,13 +325,17 @@ img_labels() {
     fi
 
     # Library images or user/org images?
-    _img=$(_img_image "$1")
+    # shellcheck disable=SC3043
+    local _img
+    _img="$(_img_image "$1")"
     [ -z "$_reg" ] && _reg=https://$(_img_registry "$1")
     if [ "${_reg%%/}" = "https://registry.docker.io" ]; then
         _reg=https://registry-1.docker.io
     fi
 
     # Default to tag called latest when none specified
+    # shellcheck disable=SC3043
+    local _tag
     if [ "$#" -ge "2" ]; then
         _tag=$2
     else
@@ -364,6 +408,91 @@ img_labels() {
     fi
 }
 
+
+img_newtags() {
+    # shellcheck disable=SC3043
+    local _flt=".*"
+    # shellcheck disable=SC3043
+    local _verbose=0 ; # Be silent by default
+    # shellcheck disable=SC3043
+    local _reg=      ; # Guess the registry by default
+    # shellcheck disable=SC3043
+    local _auth=     ; # Guess where to authorise by default
+    # shellcheck disable=SC3043
+    local _token=    ; # Authorisation token, when empty (default) go get it first
+    # shellcheck disable=SC3043
+    local _jq=jq     ; # Default is to look for jq under the PATH
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -f | --filter)
+                _flt=$2; shift 2;;
+            --filter=*)
+                _flt="${1#*=}"; shift 1;;
+
+            -r | --registry)
+                _reg=$2; shift 2;;
+            --registry=*)
+                _reg="${1#*=}"; shift 1;;
+
+            -a | --auth)
+                _auth=$2; shift 2;;
+            --auth=*)
+                _auth="${1#*=}"; shift 1;;
+
+            -t | --token)
+                _token=$2; shift 2;;
+            --token=*)
+                _token="${1#*=}"; shift 1;;
+
+            --jq)
+                _jq=$2; shift 2;;
+            --jq=*)
+                _jq="${1#*=}"; shift 1;;
+
+            -v | --verbose)
+                _verbose=1; shift;;
+
+            --)
+                shift; break;;
+            -*)
+                echo "$1 unknown option!" >&2; return 1;;
+            *)
+                break;
+        esac
+    done
+
+    [ "$#" -lt "2" ] && return 1
+
+    # shellcheck disable=SC3043
+    local _existing
+    _existing="$(mktemp)"
+
+    [ "$_verbose" = "1" ] && echo "Collecting relevant tags for $2" >&2
+    # shellcheck disable=SC2086
+    img_tags \
+        --verbose=$_verbose \
+        --filter "$_flt" \
+        --registry "$_reg" \
+        --jq="$_jq" \
+        --auth="$_auth" \
+        --token="$_token" \
+        -- \
+            "$2" > "$_existing"
+    [ "$_verbose" = "1" ] && echo "Diffing against relevant tags for $1" >&2
+    # shellcheck disable=SC2086
+    img_tags \
+        --verbose=$_verbose \
+        --filter "$_flt" \
+        --registry "$_reg" \
+        --jq="$_jq" \
+        --auth="$_auth" \
+        --token="$_token" \
+        -- \
+            "$1" |
+        grep -F -x -v -f "$_existing"
+
+    rm -f "$_existing"
+}
 
 img_unqualify() {
     printf %s\\n "$1" | sed -E 's/^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}\///'
