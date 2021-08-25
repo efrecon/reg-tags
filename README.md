@@ -1,11 +1,12 @@
 # Image Tags
 
-This library implements a few functions to operate on the existing tags at a
-Docker registry. The [project] also publishes a Docker [image] providing the
-same functionality. They are able to authenticate at the Docker [hub] for public
-images, but also at other registries. These functions prefer fully-qualified
-image names such as `ghcr.io/efrecon/jq`, but will automatically default to the
-[hub] for other image names, such as `alpine` (an alias for `library/alpine`).
+This library implements a few POSIX shell functions to operate on the existing
+tags at a Docker registry. The [project] also publishes a Docker [image]
+providing the same functionality. They are able to authenticate at the Docker
+[hub] for public images, but also at other registries. These functions prefer
+fully-qualified image names such as `ghcr.io/efrecon/reg-tags`, but will
+automatically default to the [hub] for other image names, such as `alpine` (an
+alias for `library/alpine`).
 
 + `img_tags` will print out the tags for the image which name is passed as an
   argument.
@@ -76,7 +77,7 @@ GHCR. It will guess the authorisation and registry servers from the
 fully-qualified name of the image.
 
 ```shell
-./bin/img_tags ghcr.io/efrecon/jq
+./bin/img_tags ghcr.io/efrecon/reg-tags
 ```
 
 ### Labels
