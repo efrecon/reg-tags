@@ -1,7 +1,8 @@
 # Image Tags
 
 This library implements a few functions to operate on the existing tags at a
-Docker registry. They are able to authenticate at the Docker [hub] for public
+Docker registry. The [project] also publishes a Docker [image] providing the
+same functionality. They are able to authenticate at the Docker [hub] for public
 images, but also at other registries. These functions prefer fully-qualified
 image names such as `ghcr.io/efrecon/jq`, but will automatically default to the
 [hub] for other image names, such as `alpine` (an alias for `library/alpine`).
@@ -22,6 +23,8 @@ image names such as `ghcr.io/efrecon/jq`, but will automatically default to the
   `img_labels` several times on the same image (but different tags), or
   `img_tags`.
 
+  [project]: https://github.com/efrecon/reg-tags
+  [image]: https://hub.docker.com/r/efrecon/reg-tags
   [hub]: https://hub.docker.com/
   [hooks]: https://docs.docker.com/docker-hub/builds/advanced/
 
@@ -100,7 +103,18 @@ org.opencontainers.image.vendor=Yanzi Networks AB
 org.opencontainers.image.version=
 ```
 
-## Docker Hub
+## Running as a Docker Container
+
+When running as a Docker container, the quickest is to add the short name of the
+function to call as a first argument to the container, e.g. `tags` for the
+`img_tags` function. For example, the following would list the tags of the
+[alpine] image:
+
+```shell
+docker run -it --rm efrecon/reg-tags tags alpine
+```
+
+## Docker Hub Integration
 
 ### Detecting New Tags
 
