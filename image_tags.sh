@@ -91,7 +91,7 @@ github_releases() {
                 _field="${1#*=}"; shift 1;;
 
             -r | --release)
-                _ver=$2; shift;;
+                _ver=$2; shift 2;;
             --release=*)
                 _ver="${1#*=}"; shift 1;;
 
