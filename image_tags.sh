@@ -62,6 +62,84 @@ _img_image() {
     fi
 }
 
+github_releases() {
+    # shellcheck disable=SC3043
+    local _verbose=0 ; # Be silent by default
+    # shellcheck disable=SC3043
+    local _api=https://api.github.com/; # GitHub API root
+    # shellcheck disable=SC3043
+    local _jq=jq     ; # Default is to look for jq under the PATH
+    # shellcheck disable=SC3043
+    local _ver='v[0-9]+\.[0-9]+\.[0-9]+'; # How to extract the release number
+    # shellcheck disable=SC3043
+    local _field='tag_name'; # Which JSON field to extract the release # from
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -g | --github)
+                _api=$2; shift 2;;
+            --github=*)
+                _api="${1#*=}"; shift 1;;
+
+            --jq)
+                _jq=$2; shift 2;;
+            --jq=*)
+                _jq="${1#*=}"; shift 1;;
+
+            -f | --field)
+                _field=$2; shift;;
+            --field=*)
+                _field="${1#*=}"; shift 1;;
+
+            -r | --release)
+                _ver=$2; shift;;
+            --release=*)
+                _ver="${1#*=}"; shift 1;;
+
+            -v | --verbose)
+                _verbose=1; shift;;
+            --verbose=*)
+                _verbose="${1#*=}"; shift 1;;
+
+            --trace)
+                _verbose=2; shift;;
+
+            --)
+                shift; break;;
+            -*)
+                echo "$1 unknown option!" >&2; return 1;;
+            *)
+                break;
+        esac
+    done
+
+    # Decide how to download silently
+    # shellcheck disable=SC3043
+    local download
+    download="$(_img_downloader)"
+    if [ -z "$download" ]; then return 1; fi
+
+    if [ "$#" = "0" ]; then
+        return 1
+    fi
+
+    # Decide if we can use jq or not
+    if ! command -v "$_jq" >/dev/null; then
+        [ "$_verbose" -ge "1" ] && echo "jq not found as $_jq, will approximate" >&2
+        _jq=
+    fi
+
+    [ "$_verbose" -ge "1" ] && echo "Getting releases for $1" >&2
+    if [ -z "$_jq" ]; then
+        $download "${_api%/}/repos/$1/releases" |
+            grep -oE "[[:space:]]*\"${_field}\"[[:space:]]*:[[:space:]]*\"(${_ver})\"" |
+            sed -E "s/[[:space:]]*\"${_field}\"[[:space:]]*:[[:space:]]*\"(${_ver})\"/\\1/"
+    else
+        $download "${_api%/}/repos/$1/releases" |
+            jq -r ".[].${_field}"
+    fi
+}
+
+
 # Try using the API as in img_labels and as in the ruby implementation
 # https://github.com/Jack12816/plankton/blob/58bd9deee339c645d36454a3819d95fcfe34e55d/lib/plankton/monkey_patches.rb#L119
 # instead.
