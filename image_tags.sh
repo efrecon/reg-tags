@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/sh
 
 # NOTE: This implementation makes use of the local keyword. While this is not a
 # pure POSIX shell construction, it is available in almost all implementations.
@@ -131,11 +131,13 @@ github_releases() {
     [ "$_verbose" -ge "1" ] && echo "Getting releases for $1" >&2
     if [ -z "$_jq" ]; then
         $download "${_api%/}/repos/$1/releases" |
-            grep -oE "[[:space:]]*\"${_field}\"[[:space:]]*:[[:space:]]*\"(${_ver})\"" |
-            sed -E "s/[[:space:]]*\"${_field}\"[[:space:]]*:[[:space:]]*\"(${_ver})\"/\\1/"
+            grep -oE '\s*"'"${_field}"'"\s*:\s*"([^"]+)"' |
+            sed -E 's/\s*"'"${_field}"'"\s*:\s*"([^"]+)"/\1/' |
+            grep -E '^'"$_ver"'$'
     else
         $download "${_api%/}/repos/$1/releases" |
-            jq -r ".[].${_field}"
+            jq -r ".[].${_field}" |
+            grep -E '^'"$_ver"'$'
     fi
 }
 
