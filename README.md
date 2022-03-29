@@ -18,8 +18,18 @@ alias for `library/alpine`).
   variable passed to [hooks].
 + `img_version` converts a pure semantic version to a number that can be
   compared with `-gt`, `-lt`, etc.
++ `img_config` will print out the entire configuration for a given image at a
+  given tag (default: `latest`).
 + `img_labels` will print out all the labels for a given image at a given tag
-  (default: latest).
+  (default: `latest`). The implementation is a wrapper around `img_config`.
++ `img_credentials` picks the credentials to access the image passed as a
+  parameter and return them as a base64 encoded string. Credentials are picked
+  when available without a credentials helper from the `config.json` file
+  located under the directory pointed at by the environment variable
+  `DOCKER_CONFIG` (or its default location, i.e. `~/.docker`).
++ `img_meta` will print out meta information about an image. The meta
+  information is the first argument to the function. Recognised are `created`
+  (synonym: `date`), `os`, `architecture`, `user`.
 + `img_auth` will authorise at a registry, this can be handy when calling
   `img_labels` several times on the same image (but different tags), or
   `img_tags`.
@@ -49,7 +59,9 @@ a space separator. The end of options can be marked by a single (and optional)
 ## Tests
 
 There are no tests! But there are a number of "binaries", named after the name
-of the functions to exercise their behaviour in the [bin] directory.
+of the functions to exercise their behaviour in the [bin] directory. Call these
+binaries with the `-h` (or `--help` option) to get some help over the binary
+(and related function).
 
   [bin]: ./bin/
 
