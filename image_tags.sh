@@ -3,7 +3,9 @@
 # NOTE: This implementation makes use of the local keyword. While this is not a
 # pure POSIX shell construction, it is available in almost all implementations.
 
-
+# we start by mismashing to find WHERE this very file is loaded from. We use
+# this to be able to provide help with the -h/--help options. There is no
+# support for this in POSIX shell, so it's a bit of wizardry.
 if [ -n "${BASH:-}" ]; then
   # shellcheck disable=SC3028,SC3054 # We know BASH_SOURCE only exists under bash!
   _IMG_SELF="${BASH_SOURCE[0]}"
@@ -29,7 +31,7 @@ elif command -v "lsof" >/dev/null 2>&1; then
                 tr -d '\0' |
                 sed -E 's/^f([0-9]+)n(.*)/\1 \2/g' |
                 grep -vE -e '\s+(/dev|pipe:|socket:)' -e '[a-z/]*/bin/(tr|grep|lsof|tail|sed|awk)' |
-                grep "image_tags.sh" |
+                grep ".*\.sh" |
                 tail -n 1 |
                 awk '{print $NF}')
 else
@@ -54,10 +56,9 @@ else
   _IMG_SELF=$(ls -tul "/proc/$$/fd" 2>/dev/null |
                 grep -oE '[0-9]+\s+->\s+.*' |
                 grep -vE -e '\s+(/dev|pipe:|socket:)' -e '[a-z/]*/bin/(ls|grep|tail|sed|awk)'|
-                grep "image_tags.sh" |
+                grep ".*\.sh" |
                 tail -n 1 |
-                awk '{print $NF}' |
-                sed -E 's~/[^/]+$~~')
+                awk '{print $NF}')
 fi
 
 _img_usage() {
