@@ -2,9 +2,10 @@
 name: "Lint on PR"
 
 on:
-  # Run when PR:s are proposed for inclusion into master
+  # Run on changes when PR:s are proposed for inclusion into main branch
   pull_request:
     branches:
+      - master
       - main
 
 jobs:
