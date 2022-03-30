@@ -1,5 +1,5 @@
 ---
-name: "Lint on PR"
+name: "Lint/PR"
 
 on:
   # Run on changes when PR:s are proposed for inclusion into main branch
