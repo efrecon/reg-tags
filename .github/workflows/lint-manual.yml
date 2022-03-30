@@ -4,7 +4,9 @@ name: "Lint on PR"
 on:
   # Run manually
   workflow_dispatch:
-
+  push:
+    branches:
+      - feature/lint
 
 jobs:
   lint:
