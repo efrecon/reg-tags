@@ -1,0 +1,16 @@
+---
+name: "Lint on PR"
+
+on:
+  # Run when PR:s are proposed for inclusion into master
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint:
+    uses: ./.github/workflows/_lint.yml
+    with:
+      full: "false"
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
