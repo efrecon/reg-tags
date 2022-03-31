@@ -2,10 +2,13 @@
 
 # NOTE: This implementation makes use of the local keyword. While this is not a
 # pure POSIX shell construction, it is available in almost all implementations.
+# This is a library, the file mererly declares a set of functions for you to
+# use.
 
-# we start by mismashing to find WHERE this very file is loaded from. We use
-# this to be able to provide help with the -h/--help options. There is no
-# support for this in POSIX shell, so it's a bit of wizardry.
+# We start by mismashing to find WHERE this very file is loaded from and store
+# this in the _IMG_SELF variable. We use this to be able to provide help with
+# the -h/--help options of the various functions. There is no support for this
+# in POSIX shell, so it's a bit of wizardry.
 if [ -n "${BASH:-}" ]; then
   # shellcheck disable=SC3028,SC3054 # We know BASH_SOURCE only exists under bash!
   _IMG_SELF="${BASH_SOURCE[0]}"
@@ -25,7 +28,9 @@ elif command -v "lsof" >/dev/null 2>&1; then
   #    active, so binaries, devices, etc. will be opened when it runs in order
   #    to implement it. So we remove /dev references, pipe: (busybox), and all
   #    references to the binaries used when implementing the pipe itself.
-  # 5. The file we are looking for is the last whitespace separated field of the
+  # 5. Focus on files that have a .sh ending only, i.e. likely this file.
+  # 6. Pick the first one
+  # 7. The file we are looking for is the last whitespace separated field of the
   #    last line.
   _IMG_SELF=$(lsof -p "$$" -Fn0 2>/dev/null |
                 tr -d '\0' |
@@ -46,11 +51,10 @@ else
   #    active, so binaries, devices, etc. will be opened when it runs in order
   #    to implement it. So we remove /dev references, pipe: (busybox), and all
   #    references to the binaries used when implementing the pipe itself.
-  # 4. The file we are looking for is the last whitespace separated field of
+  # 4. Focus on files that have a .sh ending only, i.e. likely this file.
+  # 5. Pick the first one
+  # 6. The file we are looking for is the last whitespace separated field of
   #    the last line.
-  # 5. Finally, use sed to remove the /bootstrap.sh (likely) from the end of
-  #    the name. We do not use dirname on purpose as this would introduce yet
-  #    another process to filter out and reason about.
 
   # shellcheck disable=SC2010 # We believe this is ok in the context of /proc
   _IMG_SELF=$(ls -tul "/proc/$$/fd" 2>/dev/null |
@@ -62,7 +66,20 @@ else
 fi
 
 _img_usage() {
-    sed -E 's/^\s+//g' <<-EOF
+    # shellcheck disable=SC2120
+    _img_align() {
+    # shellcheck disable=SC3043
+    local line || true
+
+    while IFS= read -r line; do
+        printf "%s%s %s\n" \
+        "$(printf "%.${1:-35}s\n" "$(printf "%s\n" "$line"|cut -d "${2:-":"}" -f 1)$(head -c "${1:-35}" < /dev/zero | tr '\0' ' ')")" \
+        "${2:-":"}" \
+        "$(printf %s\\n "$line"|cut -d "${2:-":"}" -f 2-)"
+    done
+    }
+
+    sed -E 's/^\s+//g' <<-EOF | fold -s -w 80
         ${2:-}
 
         Options:
@@ -71,7 +88,8 @@ EOF
         grep -E '\s+-[a-zA-Z-].*)\s+#' |
         sed -E \
             -e 's/^\s+/    /g' \
-            -e 's/\)\s+#\s+/:\t/g'
+            -e 's/\)\s+#\s+/:/g' |
+        _img_align
     exit "${3:-0}"
 }
 
@@ -755,7 +773,7 @@ img_meta() {
                 _verbose=2; shift;;
 
             -h | --help)      # Print help and return
-                _img_usage "img_meta" "Print meta information for image and tag passed as 2nd and 3rd arguments";;
+                _img_usage "img_meta" "Print meta information for image and tag passed as 2nd and 3rd arguments. meta (1st argument) can be one of: architecture, os, user, date (or its synonym: created)";;
 
             --)
                 shift; break;;
