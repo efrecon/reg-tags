@@ -11,4 +11,4 @@ RUN apk add --no-cache curl
 COPY *.sh /usr/local/lib/
 COPY bin/*.sh /usr/local/bin/
 
-ENTRYPOINT [ "/usr/local/bin/image_tags.sh" ]
+ENTRYPOINT [ "/usr/local/bin/image_api.sh" ]
