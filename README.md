@@ -1,12 +1,12 @@
-# Image Tags
+# Docker Registry Image API
 
-This library implements a few POSIX shell functions to operate on the existing
-tags at a Docker registry. In addition, the [project] publishes a Docker [image]
-providing the same [functionality](#running-as-a-docker-container). Finally, the
-project offers executable [shorthands](#examples) to the functions from the
-library to be called from the command-line. The shorthands are named after the
-name of the function, with an additional `.sh` suffix, and located in the
-[bin](./bin/README.md) directory.
+This library implements a few POSIX shell functions to interact with image
+information at a Docker registry. In addition, the [project] publishes a Docker
+[image] providing the same [functionality](#running-as-a-docker-container).
+Finally, the project offers executable [shorthands](#examples) to the functions
+from the library to be called from the command-line. The shorthands are named
+after the name of the function, with an additional `.sh` suffix, and located in
+the [bin](./bin/README.md) directory.
 
 The functions, docker image and executable shorthands are all able to
 authenticate at the Docker [hub] for public images, but also at other
