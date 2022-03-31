@@ -1,12 +1,18 @@
 # Image Tags
 
 This library implements a few POSIX shell functions to operate on the existing
-tags at a Docker registry. The [project] also publishes a Docker [image]
-providing the same functionality. They are able to authenticate at the Docker
-[hub] for public images, but also at other registries. These functions prefer
-fully-qualified image names such as `ghcr.io/efrecon/reg-tags`, but will
-automatically default to the [hub] for other image names, such as `alpine` (an
-alias for `library/alpine`).
+tags at a Docker registry. In addition, the [project] publishes a Docker [image]
+providing the same [functionality](#running-as-a-docker-container). Finally, the
+project offers executable [shorthands](#examples) to the functions from the
+library to be called from the command-line. The shorthands are named after the
+name of the function, with an additional `.sh` suffix, and located in the
+[bin](./bin/README.md) directory.
+
+The functions, docker image and executable shorthands are all able to
+authenticate at the Docker [hub] for public images, but also at other
+registries. These functions prefer fully-qualified image names such as
+`ghcr.io/efrecon/reg-tags`, but will automatically default to the [hub] for
+other image names, such as `alpine` (an alias for `library/alpine`).
 
 + `img_tags` will print out the tags for the image which name is passed as an
   argument.
@@ -34,6 +40,15 @@ alias for `library/alpine`).
   `img_labels` several times on the same image (but different tags), or
   `img_tags`.
 
+Most functions take the same set of options, see for example
+[`img_tags`](#synopsis-for-img_tags-and-img_newtags) . Alternatively, you can
+get specific help through the CLI of the shorthands, e.g. through running the
+following command (for `img_config`):
+
+```shell
+./bin/img_config -h
+```
+
   [project]: https://github.com/efrecon/reg-tags
   [image]: https://hub.docker.com/r/efrecon/reg-tags
   [hub]: https://hub.docker.com/
@@ -48,22 +63,37 @@ a space separator. The end of options can be marked by a single (and optional)
 
 + `-f` or `--filter`, a regular expression to restrict tags to versions matching
   the expression.
++ `-t` or `--token` is the authorisation token, acquired by `img_auth`. When
+  this is provided, no extra authorisation will be attempted, otherwise
+  `img_auth` will be used. When the token is empty, remaining authorisation
+  related options will be passed further to `img_auth`.
 + `-r` or `--registry` the URL to the Docker registry, defaults to the registry
   guessed from the name of the image.
 + `-a` or `--auth` is the URL for the authorisation server. For the Docker Hub,
-  this should be `https://auth.docker.io`, otherwise the same as `--registry`.
-+ `-t` or `--token` is the authorisation token, acquired by `img_auth`. When
-  this is provided, no extra authorisation will be attempted.
-+ `-v` or `--verbose` is a tag that turns on verbosity on stderr.
+  this should be `https://auth.docker.io`, which is detected automatically,
+  otherwise the same as `--registry`.
++ `-c` or `--creds` or `--credentials` is the colon-separated username and
+  password (or same string, but base64 encoded) credentials to authorise at the
+  registry. When empty, this information will be picked from the Docker client
+  configuration file, usually at `~/.docker/config.json`. When no information, a
+  "credentials-less" login will happen, which is necessary anyhow at the
+  DockerHub.
++ `--jq` specifies where to find the [`jq`][jq] binary, the default is `jq` from
+  the `$PATH`. When `jq` is not found approximations using a combination of
+  `sed` and `grep` will be used.
++ `-v` or `--verbose` turns on verbosity on stderr.
++ `-h` or `--help` prints help and returns
+
+  [jq]: https://stedolan.github.io/jq/
 
 ## Tests
 
 There are no tests! But there are a number of "binaries", named after the name
 of the functions to exercise their behaviour in the [bin] directory. Call these
 binaries with the `-h` (or `--help` option) to get some help over the binary
-(and related function).
+(and related function). See right [below](#examples) for examples.
 
-  [bin]: ./bin/
+  [bin]: ./bin/README.md
 
 ## Examples
 
