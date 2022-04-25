@@ -112,7 +112,8 @@ _img_downloader() {
 # the DockerHub, and this function handles the DockerHub itself as the special
 # case it is, i.e. authorisation happens at auth.docker.io. This function is
 # also able to detect harbor registries, as these have a slightly different
-# entrypoint when authorising according to the Docker registry protocol.
+# entrypoint when authorising according to the Docker registry protocol. The
+# entrypoint that is returned contains the HTTP scheme to use.
 _img_authorizer() {
     # Decide how to download silently
     # shellcheck disable=SC3043
@@ -125,47 +126,65 @@ _img_authorizer() {
     fi
 
     # shellcheck disable=SC3043
-    local _qualifier || true
-    _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
-    if printf %s\\n "$_qualifier" | grep -qE '^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}$'; then
+    local _qualifier _scheme || true
+    if printf %s\\n "$1" | grep -qE '^https?://'; then
+        _scheme="$(printf %s\\n "$1" | sed -E 's~^(https?):.*~\1~')://"
+        _qualifier="$(printf %s\\n "$1" | cut -d / -f 3)"
+    else
+        _scheme=https://
+        _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
+    fi
+    if printf %s\\n "$_qualifier" | grep -qE '^(([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}|localhost)(:[0-9]+)?$'; then
         case "$_qualifier" in
             docker.*)
-                printf %s\\n "auth.docker.io";;
+                printf %s%s\\n "$_scheme" "auth.docker.io";;
             *)
-                if $download "${_qualifier}" | grep -qF 'harbor'; then
-                    printf %s\\n "${_qualifier}/service"
+                if $download "${_scheme}${_qualifier}" | grep -qF 'harbor'; then
+                    printf %s%s\\n "$_scheme" "${_qualifier}/service"
                 else
-                    printf %s\\n "${_qualifier}"
+                    printf %s%s\\n "$_scheme" "${_qualifier}"
                 fi
                 ;;
         esac
     else
-        printf %s\\n "auth.docker.io"
+        printf %s%s\\n "$_scheme" "auth.docker.io"
     fi
 }
 
 _img_registry() {
     # shellcheck disable=SC3043
-    local _qualifier || true
-    _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
-    if printf %s\\n "$_qualifier" | grep -qE '^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}$'; then
+    local _qualifier _scheme || true
+    if printf %s\\n "$1" | grep -qE '^https?://'; then
+        _scheme="$(printf %s\\n "$1" | sed -E 's~^(https?):.*~\1~')://"
+        _qualifier="$(printf %s\\n "$1" | cut -d / -f 3)"
+    else
+        _scheme=https://
+        _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
+    fi
+    if printf %s\\n "$_qualifier" | grep -qE '^(([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}|localhost)(:[0-9]+)?$'; then
         case "$_qualifier" in
             docker.*)
-                printf %s\\n "registry.docker.io";;
+                printf %s%s\\n "$_scheme" "registry.docker.io";;
             *)
-                printf %s\\n "${_qualifier}";;
+                printf %s%s\\n "$_scheme" "${_qualifier}";;
         esac
     else
-        printf %s\\n "registry.docker.io"
+        printf %s%s\\n "$_scheme" "registry.docker.io"
     fi
 }
 
 _img_image() {
     # shellcheck disable=SC3043
-    local _qualifier || true
-    _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
-    if printf %s\\n "$_qualifier" | grep -qE '^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}$'; then
-        printf %s\\n "$1" | cut -d / -f 2-
+    local _qualifier _start || true
+    if printf %s\\n "$1" | grep -qE '^https?://'; then
+        _qualifier="$(printf %s\\n "$1" | cut -d / -f 3)"
+        _start=4
+    else
+        _qualifier="$(printf %s\\n "$1" | cut -d / -f 1)"
+        _start=2
+    fi
+    if printf %s\\n "$_qualifier" | grep -qE '^(([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}|localhost)(:[0-9]+)?$'; then
+        printf %s\\n "$1" | cut -d / -f ${_start}-
     elif printf %s\\n "$1" | grep -q '/'; then
         printf %s\\n "$1"
     else
@@ -340,7 +359,7 @@ img_tags() {
     # shellcheck disable=SC3043
     local _img || true
     _img="$(_img_image "$1")"
-    [ -z "$_reg" ] && _reg=https://$(_img_registry "$1")
+    [ -z "$_reg" ] && _reg=$(_img_registry "$1")
     if [ "${_reg%%/}" = "https://registry.docker.io" ]; then
         _reg=https://registry-1.docker.io
     fi
@@ -358,27 +377,25 @@ img_tags() {
         [ "$_verbose" -ge "2" ] && echo ">> Auth token: $_token" >&2
     fi
 
-    if [ -n "$_token" ] && [ "$_token" != "null" ]; then
-        # Get the digest of the image configuration
-        [ "$_verbose" -ge "1" ] && echo "Getting tags for ${_img}" >&2
-        if [ -z "$_jq" ]; then
-            $download \
-                    --header "Authorization: Bearer $_token" \
-                    "${_reg%%/}/v2/${_img}/tags/list?n=40" |
-                grep -E '.*"tags"[[:space:]]*:[[:space:]]*\[([^]]+)\]' |
-                sed -E 's/.*"tags"[[:space:]]*:[[:space:]]*\[([^]]+)\].*/\1/' |
-                sed -E 's/"[[:space:]]*,[[:space:]]*/\n/g' |
-                sed -E -e 's/^"//g' -e 's/"$//' |
-                grep -E "$_filter"
-        else
-            $download \
-                    --header "Authorization: Bearer $_token" \
-                    "${_reg%%/}/v2/${_img}/tags/list" |
-                jq -r .tags |
-                head -n -1 | tail -n +2 |
-                sed -E -e 's/^[[:space:]]*"//g' -e 's/",?$//' |
-                grep -E "$_filter"
-        fi
+    # Get the list of tags
+    [ "$_verbose" -ge "1" ] && echo "Getting tags for ${_img}" >&2
+    if [ -z "$_jq" ]; then
+        $download \
+                --header "Authorization: Bearer $_token" \
+                "${_reg%%/}/v2/${_img}/tags/list?n=40" |
+            grep -E '.*"tags"[[:space:]]*:[[:space:]]*\[([^]]+)\]' |
+            sed -E 's/.*"tags"[[:space:]]*:[[:space:]]*\[([^]]+)\].*/\1/' |
+            sed -E 's/"[[:space:]]*,[[:space:]]*/\n/g' |
+            sed -E -e 's/^"//g' -e 's/"$//' |
+            grep -E "$_filter"
+    else
+        $download \
+                --header "Authorization: Bearer $_token" \
+                "${_reg%%/}/v2/${_img}/tags/list" |
+            jq -r .tags |
+            head -n -1 | tail -n +2 |
+            sed -E -e 's/^[[:space:]]*"//g' -e 's/",?$//' |
+            grep -E "$_filter"
     fi
 }
 
@@ -431,6 +448,7 @@ img_credentials() {
         local _start _stop || true
 
         _start=$(grep -nFo -m 1 "$2" "$1"|cut -d: -f1)
+        if [ -z "$_start" ]; then return; fi
         _stop=$(tail -n +"$_start" "$1" | grep -nFo -m 1 "$3"|cut -d: -f1)
         tail -n +"$_start" "$1" | head -n "$_stop"
     }
@@ -452,23 +470,25 @@ img_credentials() {
     fi
 
     # Default authorizer
-    [ -z "$_auth" ] && _auth=https://$(_img_authorizer "$1")/
-    _reg=$(printf %s\\n "$_auth" | sed -E -e 's~^http.://~~' -e 's~/$~~')
+    [ -z "$_auth" ] && _auth=$(_img_authorizer "$1")
+    _reg=$(printf %s\\n "$_auth" | sed -E -e 's~^https?://~~' -e 's~/$~~')
     if [ "$_reg" = "auth.docker.io" ]; then
         _reg="https://index.docker.io/v1/"
     else
         _reg="$(printf %s\\n "$_reg" | cut -d / -f 1)"
     fi
-
-    # Authorizing at Docker for that image
+    # Authorizing at Docker for that image, if possible. Arrange to return an
+    # empty string, no error when no credentials are provided.
     [ "$_verbose" -ge "1" ] && echo "Looking for credentials for $1 from $_reg" >&2
     if [ -z "$_jq" ]; then
         _between "${DOCKER_CONFIG:-${HOME}/.docker}/config.json" "${_reg}" "}" |
             grep -F '"auth"' |
             sed -E -e 's/.*"auth": "([^"]+)".*/\1/'
     else
-        $_jq -r ".auths.\"${_reg}\".auth" < "${DOCKER_CONFIG:-${HOME}/.docker}/config.json" |
-            grep -v null
+        ( $_jq \
+            -r ".auths.\"${_reg}\".auth" \
+            "${DOCKER_CONFIG:-${HOME}/.docker}/config.json" |
+            grep -v null ) || true
     fi
 }
 
@@ -543,7 +563,7 @@ img_auth() {
     _img="$(_img_image "$1")"
 
     # Default authorizer
-    [ -z "$_auth" ] && _auth=https://$(_img_authorizer "$1")/
+    [ -z "$_auth" ] && _auth=$(_img_authorizer "$1")
 
     # Get credentials for access to the registry, if possible, in base64 encoded
     # form
@@ -556,38 +576,40 @@ img_auth() {
     elif ! _base64encoded "$_creds"; then
         _creds=$(printf %s "$_creds" | base64 -w 0)
     fi
-
     # shellcheck disable=SC3043
     local _svc || true
     if printf %s\\n "$_auth" | grep -qE '/service.$'; then
         _svc=harbor-registry
     else
-        _svc=$(_img_registry "$1")
+        # Remove protocol (HTTP) scheme
+        _svc=$(_img_registry "$1"|sed -E 's~^https?://~~')
     fi
 
     # Authorizing at Docker for that image
-    [ "$_verbose" -ge "1" ] && echo "Authorizing as $(printf %s "$_creds" | base64 -d| cut -d: -f1) for $_img at $_auth" >&2
+    # shellcheck disable=SC3043
+    local _authorisation || true
     if [ -n "$_creds" ]; then
+        [ "$_verbose" -ge "1" ] && echo "Authorizing as $(printf %s "$_creds" | base64 -d| cut -d: -f1) for $_img at $_auth" >&2
         # Manually add a Basic Auth header, as the --header option is supported
         # by both curl and wget
-        if [ -z "$_jq" ]; then
-            $download --header "Authorization: Basic $_creds" "${_auth%%/}/token?scope=repository:${_img}:pull&service=${_svc}" |
-                grep -E '^\{?[[:space:]]*"token"' |
-                sed -E 's/\{?[[:space:]]*"token"[[:space:]]*:[[:space:]]*"([a-zA-Z0-9_.-]+)".*/\1/'
-        else
-            $download --header "Authorization: Basic $_creds" "${_auth%%/}/token?scope=repository:${_img}:pull&service=${_svc}" |
-                $_jq -r '.token'
-        fi
+        _authorisation=$($download \
+                            --header "Authorization: Basic $_creds" \
+                            "${_auth%%/}/token?scope=repository:${_img}:pull&service=${_svc}")
     else
+        _authorisation=$($download \
+                            "${_auth%%/}/token?scope=repository:${_img}:pull&service=${_svc}")
+    fi
+    if printf %s\\n "$_authorisation" | grep -q '"token"'; then
         if [ -z "$_jq" ]; then
-            $download "${_auth%%/}/token?scope=repository:${_img}:pull&service=${_svc}" |
+            printf %s\\n "$_authorisation" |
                 grep -E '^\{?[[:space:]]*"token"' |
                 sed -E 's/\{?[[:space:]]*"token"[[:space:]]*:[[:space:]]*"([a-zA-Z0-9_.-]+)".*/\1/'
         else
-            $download "${_auth%%/}/token?scope=repository:${_img}:pull&service=${_svc}" |
+            printf %s\\n "$_authorisation" |
                 $_jq -r '.token'
         fi
     fi
+    unset _authorisation
 }
 
 
@@ -668,7 +690,7 @@ img_config() {
     # shellcheck disable=SC3043
     local _img || true
     _img="$(_img_image "$1")"
-    [ -z "$_reg" ] && _reg=https://$(_img_registry "$1")
+    [ -z "$_reg" ] && _reg=$(_img_registry "$1")
     if [ "${_reg%%/}" = "https://registry.docker.io" ]; then
         _reg=https://registry-1.docker.io
     fi
@@ -696,33 +718,31 @@ img_config() {
         [ "$_verbose" -ge "2" ] && echo ">> Auth token: $_token" >&2
     fi
 
-    if [ -n "$_token" ] && [ "$_token" != "null" ]; then
-        # Get the digest of the image configuration
-        [ "$_verbose" -ge "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
-        if [ -z "$_jq" ]; then
-            _digest=$(  $download \
-                            --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-                            --header "Authorization: Bearer $_token" \
-                            "${_reg%%/}/v2/${_img}/manifests/$_tag" |
-                        grep -E '"digest"' |
-                        head -n 1 |
-                        sed -E 's/[[:space:]]*"digest"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' )
-        else
-            _digest=$(  $download \
-                            --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-                            --header "Authorization: Bearer $_token" \
-                            "${_reg%%/}/v2/${_img}/manifests/$_tag" |
-                        $_jq -r '.config.digest' )
-        fi
-        [ "$_verbose" -ge "2" ] && echo ">> Digest: $_digest" >&2
+    # Get the digest of the image configuration
+    [ "$_verbose" -ge "1" ] && echo "Getting digest for ${_img}:${_tag}" >&2
+    if [ -z "$_jq" ]; then
+        _digest=$(  $download \
+                        --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                        --header "Authorization: Bearer $_token" \
+                        "${_reg%%/}/v2/${_img}/manifests/$_tag" |
+                    grep -E '"digest"' |
+                    head -n 1 |
+                    sed -E 's/[[:space:]]*"digest"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' )
+    else
+        _digest=$(  $download \
+                        --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                        --header "Authorization: Bearer $_token" \
+                        "${_reg%%/}/v2/${_img}/manifests/$_tag" |
+                    $_jq -r '.config.digest' )
+    fi
+    [ "$_verbose" -ge "2" ] && echo ">> Digest: $_digest" >&2
 
-        if [ -n "$_digest" ] && [ "$_digest" != "null" ]; then
-            # Download the content of the image configuration.
-            [ "$_verbose" -ge "1" ] && echo "Getting configuration for ${_img}:${_tag}" >&2
-            $download \
-                    --header "Authorization: Bearer $_token" \
-                    "${_reg%%/}/v2/${_img}/blobs/$_digest"; return
-        fi
+    if [ -n "$_digest" ] && [ "$_digest" != "null" ]; then
+        # Download the content of the image configuration.
+        [ "$_verbose" -ge "1" ] && echo "Getting configuration for ${_img}:${_tag}" >&2
+        $download \
+                --header "Authorization: Bearer $_token" \
+                "${_reg%%/}/v2/${_img}/blobs/$_digest"; return
     fi
 }
 
@@ -1035,10 +1055,27 @@ img_newtags() {
     rm -f "$_existing"
 }
 
+# Remove registry information from an image specification
 img_unqualify() {
-    printf %s\\n "$1" | sed -E 's/^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}\///'
+    printf %s\\n "$1" | sed -E 's~^(https?://)(([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[A-Za-z]{2,6}|localhost)(:[0-9]+)?\/~~'
 }
 
+# Return a fully-qualified image name. This will remove the leading scheme
+# (non-standard), consider the special case of the docker hub, add "library" and
+# the latest tag when necessary.
+img_canonicalize() {
+    # shellcheck disable=SC3043
+    local _image || true
+    _image=$(printf %s/%s\\n \
+                "$(_img_registry "$1" | sed -E -e 's~^(https?://)~~' -e 's~^registry.docker.io~docker.io~')" \
+                "$(_img_image "$1")")
+    if ! printf %s\\n "$_image" | grep -E "@sha256:[0-9a-f]{64}$" \
+        && ! printf %s\\n "$_image" | grep -E ':[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$'; then
+        printf "%s:latest\n" "$_image"
+    else
+        printf %s\\n "$_image"
+    fi
+}
 
 # From: https://stackoverflow.com/a/37939589
 img_version() {
