@@ -1069,8 +1069,8 @@ img_canonicalize() {
     _image=$(printf %s/%s\\n \
                 "$(_img_registry "$1" | sed -E -e 's~^(https?://)~~' -e 's~^registry.docker.io~docker.io~')" \
                 "$(_img_image "$1")")
-    if ! printf %s\\n "$_image" | grep -E "@sha256:[0-9a-f]{64}$" \
-        && ! printf %s\\n "$_image" | grep -E ':[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$'; then
+    if ! printf %s\\n "$_image" | grep -qE "@sha256:[0-9a-f]{64}$" \
+        && ! printf %s\\n "$_image" | grep -qE ':[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$'; then
         printf "%s:latest\n" "$_image"
     else
         printf %s\\n "$_image"
